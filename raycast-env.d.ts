@@ -28,6 +28,8 @@ declare namespace Preferences {
   export type MenuBar = ExtensionPreferences & {}
   /** Preferences accessible in the `weekly-usage` command */
   export type WeeklyUsage = ExtensionPreferences & {}
+  /** Preferences accessible in the `methodology` command */
+  export type Methodology = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -35,5 +37,7 @@ declare namespace Arguments {
   export type MenuBar = {}
   /** Arguments passed to the `weekly-usage` command */
   export type WeeklyUsage = {}
+  /** Arguments passed to the `methodology` command */
+  export type Methodology = {}
 }
 
