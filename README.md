@@ -33,6 +33,12 @@ so the absolute accuracy of the local cost model is irrelevant — only the rati
 - **Claude Weekly Usage** — SVG graph (actual, forecast, limit, weekend shading, predicted crossing), per-day table for the current window, and your learned weekly pattern.
 - **Claude Forecast Methodology** — a read-only view of how the forecast is built: real vs projected split, the day-by-day breakdown, and what was learned per weekday and per hour.
 
+## Screenshots
+
+![Claude Weekly Usage — chart, projection, and reset countdown](assets/app.png)
+
+![Claude Forecast Methodology — day-by-day breakdown](assets/methodology.png)
+
 ## Getting started (local development)
 
 ### Prerequisites
