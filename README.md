@@ -35,9 +35,9 @@ so the absolute accuracy of the local cost model is irrelevant — only the rati
 
 ## Screenshots
 
-![Claude Weekly Usage — chart, projection, and reset countdown](assets/app.png)
+![Claude Weekly Usage — chart, projection, and reset countdown](media/app.png)
 
-![Claude Forecast Methodology — day-by-day breakdown](assets/methodology.png)
+![Claude Forecast Methodology — day-by-day breakdown](media/methodology.png)
 
 ## Getting started (local development)
 
