@@ -89,6 +89,33 @@ export interface Forecast {
   hourProfile: number[];
   /** how many calendar days of history fed the profile */
   profileDays: number;
+  /** the weekday prior for today, before any live correction */
+  todayPrior: number;
+  /** full-day weight now expected for today, after blending the prior with today's pace */
+  todayIntensity: number;
+  /**
+   * Full-day weight today's own pace alone implies, already bounded by `todayCap`.
+   * Null when there was no usable pace signal, in which case `todayIntensity`
+   * is just `todayPrior`.
+   */
+  todayPaced: number | null;
+  /** how strongly today's own pace drove todayIntensity, 0-1 */
+  todayWeight: number;
+  /** cost already incurred today, inside this window */
+  todayActual: number;
+  /** share of today's usual usage mass that has already elapsed, 0-1 */
+  elapsedMass: number;
+  /**
+   * Ceiling actually applied to today: `dayCap`, or what today already spent when
+   * that is higher — a day past the cap is evidence, not noise. Null when unbounded.
+   */
+  todayCap: number | null;
+  /** multiplier applied to the weekday prior for days after today */
+  weekFactor: number;
+  /** completed days inside this window that fed weekFactor */
+  weekDaysDone: number;
+  /** ceiling on any single day's weight, null when history is too thin to bound one */
+  dayCap: number | null;
   /** real observed samples inside this window */
   samples: Sample[];
   warnings: string[];
