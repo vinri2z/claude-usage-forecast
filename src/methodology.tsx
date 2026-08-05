@@ -112,9 +112,14 @@ function hourTable(f: Forecast): string {
   return rows.join("\n");
 }
 
-/** A day weight in whatever unit is meaningful: percent once calibrated, else raw cost. */
+/**
+ * A day weight in whatever unit is meaningful: percent once calibrated, else raw
+ * cost. Every weight here describes *today*, so today's own rate converts them —
+ * the same factor the projection charges the rest of today at.
+ */
 function weight(f: Forecast, x: number): string {
-  return f.k === null ? `$${x.toFixed(2)}` : `${(x * f.k).toFixed(1)}%`;
+  const k = f.kToday ?? f.k;
+  return k === null ? `$${x.toFixed(2)}` : `${(x * k).toFixed(1)}%`;
 }
 
 /**
@@ -204,7 +209,7 @@ export function methodologyMarkdown(f: Forecast): string {
     "",
     "## Calibration",
     "",
-    "The two sources use different units — an opaque model-weighted budget versus token counts. Instead of guessing the budget size, one factor is fitted inside the current window:",
+    "The two sources use different units — an opaque model-weighted budget versus token counts. Instead of guessing the budget size, a factor is fitted inside the current window:",
     "",
     "```",
     "k = weekly % now / local cost so far this window",
@@ -212,7 +217,24 @@ export function methodologyMarkdown(f: Forecast): string {
     "",
     f.k === null
       ? "Not calibrated yet this window, so the forecast stays flat and the weights above are shown as raw cost."
-      : `Currently **${f.k.toFixed(2)} % per $**, from $${f.costSoFar.toFixed(2)} of local activity. Projected hours are converted to percent with the same k, so the absolute cost model never matters — only relative sizes do.`,
+      : `Currently **${f.k.toFixed(2)} % per $**, from $${f.costSoFar.toFixed(2)} of local activity. Projected hours are converted to percent the same way, so the absolute cost model never matters — only relative sizes do.`,
+    "",
+    f.k === null
+      ? null
+      : "That single number has a catch. The cost model is a proxy, and its %-per-$ genuinely wanders several-fold from one day to the next. Fitted across the whole window it folds in today's in-flight cost, so a heavy morning would drag k down and quietly shrink **Friday's** forecast along with it. The forecast for a day you have not reached yet should not move because of what you did this morning, so the fit is split in two:",
+    "",
+    f.k === null
+      ? null
+      : [
+          "| Used for | Fitted on | Rate |",
+          "| --- | --- | --- |",
+          `| Days after today | the completed days of this window | ${f.kBase === null ? "—" : `**${f.kBase.toFixed(3)} % per $**`}${f.costBeforeToday > 0.05 ? ` · ${f.pctToday === null ? "" : `${(f.pctNow - f.pctToday).toFixed(0)}% over `}$${f.costBeforeToday.toFixed(2)}` : ""} |`,
+          `| The rest of today | today alone | ${f.kToday === null ? "—" : `**${f.kToday.toFixed(3)} % per $**`}${f.pctToday === null ? "" : ` · ${f.pctToday.toFixed(0)}% over $${f.todayActual.toFixed(2)}`} |`,
+        ].join("\n"),
+    "",
+    f.k === null
+      ? null
+      : "The baseline rate only re-fits at midnight, when today closes and becomes evidence, so the rest of the week holds a steady trajectory through the day. Today's own rate is what the API has actually charged you for today's work, which keeps the end-of-day landing honest even when today burns budget at a different rate than the week did. Neither is allowed more than 4× away from the window-wide k, and until today has moved at least 3 percentage points — whole percents are all the API reports, so less than that is mostly rounding — today borrows the baseline rate rather than reading noise.",
     "",
     "## The weekday prior",
     "",

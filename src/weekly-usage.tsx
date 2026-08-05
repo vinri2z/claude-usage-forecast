@@ -49,7 +49,9 @@ function timeLabel(ms: number): string {
 function todayPaceLabel(f: Forecast): string {
   if (f.todayPaced === null || f.k === null) return "Too early to tell";
   if (f.todayPrior <= 0.05) {
-    return `Usually idle · tracking ${(f.todayIntensity * f.k).toFixed(0)}%`;
+    // Today's weight, so today's own rate — matching the methodology view.
+    const k = f.kToday ?? f.k;
+    return `Usually idle · tracking ${(f.todayIntensity * k).toFixed(0)}%`;
   }
   const shift = f.todayIntensity / f.todayPrior;
   if (shift > 1.15) return `${shift.toFixed(1)}× heavier than usual`;

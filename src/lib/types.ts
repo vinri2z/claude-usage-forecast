@@ -71,8 +71,23 @@ export interface Forecast {
   /** start/end of the current weekly window (epoch ms) */
   windowStart: number;
   windowEnd: number;
-  /** %-per-USD calibration factor; null when there is not enough in-window data */
+  /** %-per-USD calibration factor over the whole window; null when there is not enough in-window data */
   k: number | null;
+  /**
+   * %-per-USD from the *completed* days of this window, used for every day
+   * after today so today's own burn rate cannot rescale the rest of the week.
+   * Falls back to `k` when there is no closed segment or no sample to price it.
+   */
+  kBase: number | null;
+  /**
+   * %-per-USD today has actually been charged at, used for what is left of
+   * today. Falls back to `kBase` until today has moved enough percent to read.
+   */
+  kToday: number | null;
+  /** cost incurred inside the current window before today started */
+  costBeforeToday: number;
+  /** real percentage points today has consumed, null when unmeasurable */
+  pctToday: number | null;
   /** cost incurred inside the current window so far */
   costSoFar: number;
   /** rebuilt actual curve for the window so far */

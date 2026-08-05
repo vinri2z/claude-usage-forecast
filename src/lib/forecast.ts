@@ -10,6 +10,11 @@
  * and project forward with k. That makes the absolute scale of the cost model
  * irrelevant and keeps the forecast anchored to the number Claude Code shows.
  *
+ * k is fitted twice, because a single window-wide fit lets today's in-flight
+ * cost rescale days you have not reached yet. Days after today use the rate the
+ * completed days settled on; the rest of today uses today's own. See "Splitting
+ * the calibration" in `buildForecast`.
+ *
  * The day-of-week profile is only a prior. What today actually looks like beats
  * it: a day is classified by its own pace, not by its position in the week, so a
  * quiet Wednesday that turns intensive is forecast as an intensive day within
@@ -47,6 +52,17 @@ const MAX_WEEK_RATIO = 4;
 /** Which of your busy days becomes the ceiling for a single day. */
 const DAY_CAP_PERCENTILE = 0.9;
 const DAY_CAP_HEADROOM = 1.15;
+/**
+ * How far a per-segment calibration may stray from the window-wide one. The
+ * local cost model is a proxy, so its %-per-$ genuinely wanders day to day;
+ * this stops one thin or mis-attributed segment from rescaling the week.
+ */
+const MAX_K_RATIO = 4;
+/**
+ * Percentage points today must have moved before its own rate is trusted. The
+ * API reports whole percents, so a smaller delta is mostly rounding.
+ */
+const MIN_TODAY_PCT_DELTA = 3;
 
 function startOfLocalDay(ms: number): number {
   const d = new Date(ms);
@@ -178,6 +194,28 @@ function hourMass(hourProfile: number[], from: number, to: number): number {
     s += hourProfile[new Date(t).getHours()] * ((hi - lo) / HOUR);
   }
   return s;
+}
+
+/**
+ * The real weekly percentage as of `at`, from the persisted sample log. Samples
+ * are only comparable inside one window, so a sample is only usable when its
+ * reset matches this window's — the reset timestamp jitters by a few seconds
+ * between fetches, hence the tolerance. Null when the poll has not run in this
+ * window before `at`.
+ */
+function pctAt(
+  samples: Sample[],
+  windowEnd: number,
+  at: number,
+): number | null {
+  let best: Sample | null = null;
+  for (const s of samples) {
+    if (s.t > at) continue;
+    if (s.resetsAt === null || Math.abs(s.resetsAt - windowEnd) > HOUR)
+      continue;
+    if (best === null || s.t > best.t) best = s;
+  }
+  return best === null ? null : best.weekly;
 }
 
 function sumHourly(
@@ -346,27 +384,63 @@ export function buildForecast(
     weekFactor = Math.pow(ratio, doneDays / (doneDays + WEEK_HALF_WEIGHT_DAYS));
   }
 
+  // --- Splitting the calibration -------------------------------------------
+  // One window-wide k folds today's in-flight cost into the conversion factor,
+  // so a day whose %-per-$ runs off the week's average quietly rescales every
+  // *future* day too — the forecast for Friday moves because of what you did
+  // this morning. The cost model is a proxy, and its %-per-$ genuinely varies
+  // several-fold between days, so that coupling is noise, not signal.
+  //
+  // Split it in two. Days after today convert with the rate the *closed* days
+  // of this window settled on, so their trajectory holds all day and only
+  // re-baselines at midnight. What is left of today converts with today's own
+  // observed rate, which keeps the end-of-day landing consistent with the
+  // percentage the API has actually charged for today's work.
+  const costBeforeToday = sumHourly(history.hourly, windowStart, todayStart);
+  const pctAtTodayStart = pctAt(samples, windowEnd, todayStart);
+  const pctToday = pctAtTodayStart === null ? 0 : pctNow - pctAtTodayStart;
+
+  let kBase = k;
+  let kToday = k;
+  if (
+    k !== null &&
+    pctAtTodayStart !== null &&
+    todayStart > windowStart &&
+    costBeforeToday > 0.05
+  ) {
+    const lo = k / MAX_K_RATIO;
+    const hi = k * MAX_K_RATIO;
+    kBase = clamp(pctAtTodayStart / costBeforeToday, lo, hi);
+    // Whole-percent reporting makes a small delta mostly rounding; until today
+    // has moved enough to read, it inherits the closed-day rate.
+    kToday =
+      pctToday >= MIN_TODAY_PCT_DELTA && todayActual > 0.05
+        ? clamp(pctToday / todayActual, lo, hi)
+        : kBase;
+  }
+
   // Project hour by hour to window end.
   const projected: ForecastPoint[] = [{ t: now, pct: pctNow }];
   let hitsLimitAt: number | null = null;
   let pct = pctNow;
-  const kEff = k ?? 0;
+  const kFuture = kBase ?? 0;
+  const kRestOfToday = kToday ?? 0;
 
   const firstHour = Math.floor(now / HOUR) * HOUR;
   for (let t = firstHour; t < windowEnd; t += HOUR) {
     const d = new Date(t);
+    const isToday = startOfLocalDay(t) === todayStart;
     // Today uses its live intensity; later days use the prior nudged by the week.
-    const dayWeight =
-      startOfLocalDay(t) === todayStart
-        ? todayIntensity
-        : Math.min(dowProfile[d.getDay()] * weekFactor, cap);
+    const dayWeight = isToday
+      ? todayIntensity
+      : Math.min(dowProfile[d.getDay()] * weekFactor, cap);
     let expected = dayWeight * hourProfile[d.getHours()];
     if (t === firstHour) {
       // Only the unelapsed part of the current hour is still to come.
       expected *= 1 - (now - firstHour) / HOUR;
     }
     const prev = pct;
-    pct += kEff * expected;
+    pct += (isToday ? kRestOfToday : kFuture) * expected;
     const at = Math.min(t + HOUR, windowEnd);
     projected.push({ t: at, pct });
     if (hitsLimitAt === null && pct >= 100 && k !== null) {
@@ -391,6 +465,10 @@ export function buildForecast(
     windowStart,
     windowEnd,
     k,
+    kBase,
+    kToday,
+    costBeforeToday,
+    pctToday: pctAtTodayStart === null ? null : pctToday,
     costSoFar,
     actual,
     projected,
